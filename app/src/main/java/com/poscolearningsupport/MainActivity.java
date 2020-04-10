@@ -1,16 +1,13 @@
 package com.poscolearningsupport;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothManager;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
-import android.content.pm.PackageManager;
-import android.location.Location;
-import android.location.LocationListener;
-import android.location.LocationManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -26,6 +23,7 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
 
+import androidx.annotation.RequiresApi;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
@@ -40,10 +38,12 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashSet;
+import java.util.Objects;
 
 public class MainActivity extends AppCompatActivity {
     //웹뷰를 위한 변수
@@ -87,6 +87,7 @@ public class MainActivity extends AppCompatActivity {
         //BLE 가능여부 체크 후 스위치 On
         //BLE를 위한 초기세팅
         bluetoothManager = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
+        assert bluetoothManager != null;
         bluetoothAdapter = bluetoothManager.getAdapter();
         requestEnableBLE(bluetoothAdapter);
 
@@ -135,9 +136,9 @@ public class MainActivity extends AppCompatActivity {
                 closeApp();
             } else if (nowUrl.equals(hostName+"/?ca=main") || nowUrl.equals(hostName+"/?ca=login")) { //현재 페이지가 메인화면이거나 로그인화면이라면 프로그램 종료
                 closeApp();
-            } else if ((keyCode == KeyEvent.KEYCODE_BACK) && (mWebView.canGoBack() == false)) { //백할 페이지가 없다면 프로그램 종료
+            } else if (!mWebView.canGoBack()) { //백할 페이지가 없다면 프로그램 종료
                 closeApp();
-            } else if (nowUrl.equals(hostName+"/?ca=main")==false) { //세부메뉴 화면에서 백하는 것이라면 무조건 메인화면으로
+            } else if (!nowUrl.equals(hostName + "/?ca=main")) { //세부메뉴 화면에서 백하는 것이라면 무조건 메인화면으로
                 mWebView.loadUrl(hostName+"/?ca=main");
             } else { //다른 상황이 있을려나... 있다면 페이지 뒤로가기 허용
                 mWebView.goBack();
@@ -164,91 +165,39 @@ public class MainActivity extends AppCompatActivity {
 
     //BLE 스캔시작 메쏘드
     public void startScan() {
-        boolean permissionCheck = false;
+        //BLE 가능여부 체크 후 스위치 On
+        //BLE를 위한 초기세팅
+        bluetoothManager = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
+        assert bluetoothManager != null;
+        bluetoothAdapter = bluetoothManager.getAdapter();
 
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            //위치 퍼미션 강제 발생코드
-            ActivityCompat.requestPermissions(this,
-                    new String[]{Manifest.permission.ACCESS_COARSE_LOCATION},
-                    MY_PERMISSIONS_REQUEST_ACCESS_COARSE_LOCATION);
-        } else {
-            permissionCheck = true;
-        }
+        boolean setBluetoothOn = requestEnableBLE(bluetoothAdapter);
 
-        if (permissionCheck) {
-            //BLE 가능여부 체크 후 스위치 On
-            //BLE를 위한 초기세팅
-            bluetoothManager = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
-            bluetoothAdapter = bluetoothManager.getAdapter();
-            boolean setBluetoothOn = requestEnableBLE(bluetoothAdapter);
+        //블루투스를 지원하는 기기이며 스위치 On 요청 후 스캔 시작
+        if (setBluetoothOn) {
+            boolean SwitchOn = checkBLEswithOn(bluetoothAdapter);
+            if (SwitchOn) {
+                //MAC 리스트 초기화
+                MacList.clear();
 
-            //블루투스를 지원하는 기기이며 스위치 On 요청 후 스캔 시작
-            if (setBluetoothOn) {
-                boolean SwitchOn = checkBLEswithOn(bluetoothAdapter);
-                if (SwitchOn) {
-                    //MAC 리스트 초기화
-                    MacList.clear();
+                //스캔시작 메세지 출력
+                Toast.makeText(getApplicationContext(), "교육장 신호를 감지합니다.", Toast.LENGTH_LONG).show();
 
-                    //스캔시작 메세지 출력
-                    Toast.makeText(getApplicationContext(), "교육장 신호를 감지합니다.", Toast.LENGTH_LONG).show();
+                //스캔 시작
+                bluetoothAdapter.startLeScan(leScanCallback);
 
-                    //스캔 시작
-                    bluetoothAdapter.startLeScan(leScanCallback);
-
-//                    //GPS 켜져 있는지 확인
-//                    final LocationManager lm = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
-//                    final boolean gpsSwitchOn = lm.isProviderEnabled(LocationManager.GPS_PROVIDER);
-//
-//                    if (gpsSwitchOn) {
-//                        //GPS 좌표 따기
-//                        String locationProvider = LocationManager.NETWORK_PROVIDER;
-//                        Location location = lm.getLastKnownLocation(locationProvider);
-//                        if (location==null) {
-//                            Log.d("NETWORK_PROVIDER","마지막 위치 없음. GPS 위치 사용");
-//                            locationProvider = LocationManager.GPS_PROVIDER;
-//                            location = lm.getLastKnownLocation(locationProvider);
-//                        }
-//                        if (location==null) {
-//                            Log.d("GPS_PROVIDER","마지막 위치 없음. 어떻게 하지??");
-//                        } else {
-//                            String latitude = Double.toString(location.getLatitude());
-//                            String longitude = Double.toString(location.getLongitude());
-//                            String altitude = Double.toString(location.getAltitude());
-//                            String accuracy = Float.toString(location.getAccuracy());
-//
-//                            //위치정보_경도_위도_고도_정확도(meter)
-//                            gpsResult = latitude + "_" + longitude + "_" + altitude + "_" + accuracy;
-//                            gpsAccuracy = location.getAccuracy();
-//                        }
-//                        Log.d("GPS", "시작");
-//                        Log.d("GPS결과", gpsResult);
-//                        lm.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 1, 10, gpsLocationListener);
-//                        lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1, 10, gpsLocationListener);
-//                    } else {
-//                        //Toast.makeText(getApplicationContext(), "GPS 관련 오류가 발생하였습니다.", Toast.LENGTH_LONG).show();
-//                        gpsResult = "gpsSwitchOff";
-//                        Log.d("GPS 스위치", "켜져 있지 않음");
-//                    }
-
-                    //10초 뒤 모든 스캔 스톱
-                    final Handler handler = new Handler();
-                    handler.postDelayed(new Runnable() {
-                        @Override
-                        public void run() {
-                            stopScan();
-                            Log.d("BLE", "중지");
-//                            if (gpsSwitchOn) {
-//                                lm.removeUpdates(gpsLocationListener);
-//                                Log.d("GPS", "중지");
-//                            }
-                        }
-                    }, 10000);
-                } else {
-                    Toast.makeText(getApplicationContext(), "블루투스 스위치를 켠 다음 시도해 주십시오.", Toast.LENGTH_LONG).show();
-                }
+                //10초 뒤 모든 스캔 스톱
+                final Handler handler = new Handler();
+                handler.postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        stopScan();
+                        Log.d("BLE", "중지");
+                    }
+                }, 10000);
+            } else {
+                Toast.makeText(getApplicationContext(), "블루투스 스위치를 켠 다음 시도해 주십시오.", Toast.LENGTH_LONG).show();
             }
-        } else {
-            Toast.makeText(getApplicationContext(), "위치 권한 관련 오류가 발생하였습니다. 권한을 허용한 후 다시 시도해 주세요.", Toast.LENGTH_LONG).show();
         }
     }
 
@@ -270,20 +219,21 @@ public class MainActivity extends AppCompatActivity {
 
         //Toast.makeText(getApplicationContext(), MacResults, Toast.LENGTH_LONG).show();
         //맥리스트 서버로 전송
-        int resultsMsg=sendMacListToServer(MacResults);
+        assert MacResults != null;
+        int resultsMsg=sendMacListToServer(MacResults.toString());
         if (resultsMsg!=200) {
             Toast.makeText(getApplicationContext(), "서버통신 실패("+resultsMsg+")", Toast.LENGTH_LONG).show();
         }
     }
 
     //해당 과정에 등록된 비콘 리스트 가져오기
+    @RequiresApi(api = Build.VERSION_CODES.KITKAT)
     public String getBeaconListByString() {
         int responseCode=0;
         String c=getCookie(hostName,"c");
         String i=getCookie(hostName,"i");
         String selectedCuriNo=getCookie(hostName,"selectedCuriNo");
         String selectedChaNo=getCookie(hostName,"selectedChaNo");
-        //String setUrl=hostName+"/?ca=getBeaconList&c=Y&i=ZlQxTW1PZVk5azJ2MXBlK2FGS2dJQT09&selectedCuriNo=522966&selectedChaNo=665710";
         String setUrl=hostName+"/?ca=getBeaconList&c="+c+"&i="+i+"&selectedCuriNo="+selectedCuriNo+"&selectedChaNo="+selectedChaNo;
         String responseResults=null;
         try {
@@ -298,7 +248,7 @@ public class MainActivity extends AppCompatActivity {
                 StringBuilder sb = new StringBuilder();
                 //Stream을 처리해줘야 하는 귀찮음이 있음.
                 BufferedReader br = new BufferedReader(
-                        new InputStreamReader(conn.getInputStream(), "utf-8"));
+                    new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
                 String line;
                 while ((line = br.readLine()) != null) {
                     sb.append(line).append("\n");
@@ -314,30 +264,39 @@ public class MainActivity extends AppCompatActivity {
                         beaconList.add(beaconObject.getString("macAddress"));
                     }
                 } catch (JSONException e) {
+                    Toast.makeText(getApplicationContext(), "비콘 리스트 정렬에 실패했습니다.", Toast.LENGTH_LONG).show();
                     e.printStackTrace();
                 }
             }
             conn.disconnect();
         } catch (MalformedURLException e) {
             responseCode=1;
+            beaconLoadFailureToastMessage();
         } catch (IOException e) {
             responseCode=2;
+            beaconLoadFailureToastMessage();
         }
         if (responseCode!=200) {
+            beaconLoadFailureToastMessage();
             return "error";
         } else {
             return responseResults;
         }
     }
 
+    public void beaconLoadFailureToastMessage() {
+        Toast.makeText(getApplicationContext(), "서버에서 비콘 정보를 로드하는데 실패했습니다.", Toast.LENGTH_LONG).show();
+    }
+
     //맥리스트 서버로 전송하는 메쏘드
+    @RequiresApi(api = Build.VERSION_CODES.KITKAT)
     public int sendMacListToServer(String MacResults) {
         int responseCode=0;
         String c=getCookie(hostName,"c");
         String i=getCookie(hostName,"i");
         String selectedCuriNo=getCookie(hostName,"selectedCuriNo");
         String selectedChaNo=getCookie(hostName,"selectedChaNo");
-        SimpleDateFormat thisDateFormat = new SimpleDateFormat ( "yyyy-MM-dd");
+        @SuppressLint("SimpleDateFormat") SimpleDateFormat thisDateFormat = new SimpleDateFormat ( "yyyy-MM-dd");
         Date time = new Date();
         String chulDate = thisDateFormat.format(time);
         String setUrl=hostName+"/?ca=setChulSign&c="+c+"&i="+i+"&selectedCuriNo="+selectedCuriNo+"&selectedChaNo="+selectedChaNo+"&chulDate="+chulDate+"&macResults="+MacResults+"&gps="+gpsResult;
@@ -357,7 +316,7 @@ public class MainActivity extends AppCompatActivity {
                 StringBuilder sb = new StringBuilder();
                 //Stream을 처리해줘야 하는 귀찮음이 있음.
                 BufferedReader br = new BufferedReader(
-                        new InputStreamReader(conn.getInputStream(), "utf-8"));
+                    new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
                 String line;
                 while ((line = br.readLine()) != null) {
                     sb.append(line).append("\n");
@@ -368,10 +327,16 @@ public class MainActivity extends AppCompatActivity {
             }
         } catch (MalformedURLException e) {
             responseCode=1;
+            sendMacListToServerFailureToastMessage();
         } catch (IOException e) {
             responseCode=2;
+            sendMacListToServerFailureToastMessage();
         }
         return responseCode;
+    }
+
+    public void sendMacListToServerFailureToastMessage() {
+        Toast.makeText(getApplicationContext(), "서버로 출석 정보를 전송하는데 실패했습니다.", Toast.LENGTH_LONG).show();
     }
 
     //스캔 이후 장치 발견 이벤트
@@ -392,11 +357,8 @@ public class MainActivity extends AppCompatActivity {
 
     //블루투스 켜져있는지 체크
     public boolean checkBLEswithOn(BluetoothAdapter bluetoothAdapter) {
-        if (!bluetoothAdapter.isEnabled()) { //연결 안되었을 때
-            return false;
-        } else {
-            return true;
-        }
+        //연결 안되었을 때
+        return bluetoothAdapter.isEnabled();
     }
 
     //블루투스 자동 on 메쏘드
@@ -413,47 +375,14 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    //GPS리스너
-    final LocationListener gpsLocationListener = new LocationListener() {
-        public void onLocationChanged(Location location) {
-            String latitude = Double.toString(location.getLatitude());
-            String longitude = Double.toString(location.getLongitude());
-            String altitude = Double.toString(location.getAltitude());
-            String accuracy = Float.toString(location.getAccuracy());
-
-            if (gpsAccuracy!=null) {
-                if (location.getAccuracy() < gpsAccuracy) {
-                    //위치정보_경도_위도_고도_정확도(meter)
-                    gpsResult = latitude + "_" + longitude + "_" + altitude + "_" + accuracy;
-                    Log.d("GPS결과", gpsResult);
-                } else {
-                    Log.d("GPS결과 - 정확도가 낮아 변경하지 않음", gpsResult);
-                }
-            } else {
-                //위치정보_경도_위도_고도_정확도(meter)
-                gpsAccuracy = location.getAccuracy();
-                gpsResult = latitude + "_" + longitude + "_" + altitude + "_" + accuracy;
-                Log.d("GPS결과", gpsResult);
-            }
-        }
-
-        public void onStatusChanged(String provider, int status, Bundle extras) {
-        }
-
-        public void onProviderEnabled(String provider) {
-        }
-
-        public void onProviderDisabled(String provider) {
-        }
-    };
-
     //웹뷰 화면에서의 이벤트 클래스
     public class WebViewClientClass extends WebViewClient {
+        @RequiresApi(api = Build.VERSION_CODES.KITKAT)
         @Override
         public boolean shouldOverrideUrlLoading(WebView view, String url) {
             //Log.d("URL 체크 : ", Uri.parse(url).getHost());
             //외부 URL로 연결하는 경우(카훗, 이플 등) 스마트폰 자체 브라우저로 실행
-            if (Uri.parse(url).getHost().equals(hostNameNotHttp)) {
+            if (Objects.equals(Uri.parse(url).getHost(), hostNameNotHttp)) {
                 // This is my website, so do not override; let my WebView load the page
                 view.loadUrl(url);
                 return false;
@@ -477,6 +406,7 @@ public class MainActivity extends AppCompatActivity {
                     if (chulSign != null) {
                         //BLE를 위한 초기세팅
                         bluetoothManager = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
+                        assert bluetoothManager != null;
                         bluetoothAdapter = bluetoothManager.getAdapter();
 
                         //BLE 가능여부 체크 후 스위치 On
@@ -491,7 +421,7 @@ public class MainActivity extends AppCompatActivity {
                         Toast.makeText(getApplicationContext(), "출석신호를 감지합니다", Toast.LENGTH_LONG).show();
                         //해당 과정에 등록된 비콘 리스트 가져오기
                         String beaconList=getBeaconListByString();
-                        if (beaconList=="error") {
+                        if (beaconList.equals("error")) {
                             Toast.makeText(getApplicationContext(), "서버통신 실패", Toast.LENGTH_LONG).show();
                         } else {
                             //여기부터 비콘감지 및 URL보내기 작동!
