@@ -3,8 +3,10 @@ package com.poscolearningsupport;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothAdapter;
-import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothManager;
+import android.bluetooth.le.BluetoothLeScanner;
+import android.bluetooth.le.ScanCallback;
+import android.bluetooth.le.ScanResult;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
@@ -27,6 +29,7 @@ import androidx.annotation.RequiresApi;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -56,8 +59,11 @@ public class MainActivity extends AppCompatActivity {
 
     //BLE를 위한 변수
     public final int MY_PERMISSIONS_REQUEST_ACCESS_COARSE_LOCATION = 1;
+    public final int MY_PERMISSIONS_REQUEST_ACCESS_FINE_LOCATION = 1;
     public BluetoothManager bluetoothManager;
     public BluetoothAdapter bluetoothAdapter;
+    public BluetoothLeScanner bluetoothLeScanner;
+
     ArrayList<String> MacList = new ArrayList<String>();
     ArrayList<String> beaconList = new ArrayList<String>();
 
@@ -77,17 +83,10 @@ public class MainActivity extends AppCompatActivity {
         mWebView.loadUrl(firstPageUrl);
         mWebView.setWebViewClient(new WebViewClientClass());
 
-        //쿠키 동기화
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
-            CookieSyncManager.createInstance(this);
-        }
-
         Toast.makeText(getApplicationContext(), "포스코인재창조원 학습지원 앱", Toast.LENGTH_SHORT).show();
 
         //BLE 가능여부 체크 후 스위치 On
-        //BLE를 위한 초기세팅
         bluetoothManager = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
-        assert bluetoothManager != null;
         bluetoothAdapter = bluetoothManager.getAdapter();
         requestEnableBLE(bluetoothAdapter);
 
@@ -95,34 +94,27 @@ public class MainActivity extends AppCompatActivity {
         int SDK_INT = android.os.Build.VERSION.SDK_INT;
         if (SDK_INT > 8)
         {
-            StrictMode.ThreadPolicy policy = new StrictMode.ThreadPolicy.Builder()
-                    .permitAll().build();
+            StrictMode.ThreadPolicy policy = new StrictMode.ThreadPolicy.Builder().permitAll().build();
             StrictMode.setThreadPolicy(policy);
         }
         //위치 퍼미션 강제 발생코드
-        ActivityCompat.requestPermissions(this,
-                new String[]{Manifest.permission.ACCESS_COARSE_LOCATION},
-                MY_PERMISSIONS_REQUEST_ACCESS_COARSE_LOCATION);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, MY_PERMISSIONS_REQUEST_ACCESS_FINE_LOCATION);
+        } else {
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.ACCESS_COARSE_LOCATION}, MY_PERMISSIONS_REQUEST_ACCESS_COARSE_LOCATION);
+        }
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-
-        //쿠키 동기화
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
-            CookieSyncManager.getInstance().startSync();
-        }
     }
 
     @Override
     protected void onPause() {
         super.onPause();
-
-        //쿠키 동기화
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
-            CookieSyncManager.getInstance().stopSync();
-        }
     }
 
     //뒤로가기 눌렀을 때 앱종료 NO 뒤로가게
@@ -166,65 +158,98 @@ public class MainActivity extends AppCompatActivity {
     //BLE 스캔시작 메쏘드
     public void startScan() {
         //BLE 가능여부 체크 후 스위치 On
-        //BLE를 위한 초기세팅
-        bluetoothManager = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
         assert bluetoothManager != null;
-        bluetoothAdapter = bluetoothManager.getAdapter();
+        assert bluetoothAdapter != null;
+        assert bluetoothLeScanner != null;
+        try {
+            bluetoothLeScanner = bluetoothAdapter.getBluetoothLeScanner();
+            bluetoothManager = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
+            bluetoothAdapter = bluetoothManager.getAdapter();
+        } catch(Exception e) {
+            Toast.makeText(getApplicationContext(), "블루투스 미지원 기기이므로 출석이 불가능합니다.", Toast.LENGTH_LONG).show();
+        } finally {
+            boolean setBluetoothOn = requestEnableBLE(bluetoothAdapter);
+            //블루투스를 지원하는 기기이면 스위치 On 요청 후 스캔 시작
+            if (setBluetoothOn) {
+                boolean SwitchOn = checkBLEswithOn(bluetoothAdapter);
+                if (SwitchOn) {
+                    //MAC 리스트 초기화
+                    MacList.clear();
 
-        boolean setBluetoothOn = requestEnableBLE(bluetoothAdapter);
+                    //스캔시작 메세지 출력
+                    Toast.makeText(getApplicationContext(), "교육장 신호를 감지합니다.", Toast.LENGTH_LONG).show();
 
-        //블루투스를 지원하는 기기이며 스위치 On 요청 후 스캔 시작
-        if (setBluetoothOn) {
-            boolean SwitchOn = checkBLEswithOn(bluetoothAdapter);
-            if (SwitchOn) {
-                //MAC 리스트 초기화
-                MacList.clear();
+                    //스캔 시작
+                    bluetoothLeScanner.startScan(ScanCallback);
 
-                //스캔시작 메세지 출력
-                Toast.makeText(getApplicationContext(), "교육장 신호를 감지합니다.", Toast.LENGTH_LONG).show();
-
-                //스캔 시작
-                bluetoothAdapter.startLeScan(leScanCallback);
-
-                //10초 뒤 모든 스캔 스톱
-                final Handler handler = new Handler();
-                handler.postDelayed(new Runnable() {
-                    @Override
-                    public void run() {
-                        stopScan();
-                        Log.d("BLE", "중지");
-                    }
-                }, 10000);
+                    //10초 뒤 모든 스캔 스톱
+                    final Handler handler = new Handler();
+                    handler.postDelayed(new Runnable() {
+                        @Override
+                        public void run() {
+                            stopScan();
+                            Log.d("BLE", "중지");
+                        }
+                    }, 10000);
+                } else {
+                    Toast.makeText(getApplicationContext(), "블루투스 스위치를 켠 다음 시도해 주십시오.", Toast.LENGTH_LONG).show();
+                }
             } else {
-                Toast.makeText(getApplicationContext(), "블루투스 스위치를 켠 다음 시도해 주십시오.", Toast.LENGTH_LONG).show();
+                Toast.makeText(getApplicationContext(), "블루투스 미지원 기기이므로 출석이 불가능합니다.", Toast.LENGTH_LONG).show();
             }
         }
     }
 
-    //BLE 스캔종료 메쏘드
+    //BLE 스캔종료 후 실행
     public void stopScan() {
         //스캔을 먼저 중지하고
-        bluetoothAdapter.stopLeScan(leScanCallback);
+        bluetoothLeScanner.stopScan(ScanCallback);
 
-        String MacResults = null;
+        String MacResults = "";
         HashSet<String> OnlyMacList = new HashSet<String>(MacList);
         MacList = new ArrayList<String>(OnlyMacList);
         for (String list : MacList) {
-            if (MacResults == null) {
+            if (MacResults == "") {
                 MacResults = list;
             } else {
                 MacResults = MacResults + "|" + list;
             }
         }
 
-        //Toast.makeText(getApplicationContext(), MacResults, Toast.LENGTH_LONG).show();
         //맥리스트 서버로 전송
-        assert MacResults != null;
-        int resultsMsg=sendMacListToServer(MacResults.toString());
+        int resultsMsg= 0;
+        Log.d("맥결과", "결과 - "+MacResults);
+        if (!MacResults.equals("")) {
+            resultsMsg = sendMacListToServer(MacResults);
+        } else {
+            Toast.makeText(getApplicationContext(), "교육장 신호 감지에 실패하였습니다.", Toast.LENGTH_LONG).show();
+        }
         if (resultsMsg!=200) {
-            Toast.makeText(getApplicationContext(), "서버통신 실패("+resultsMsg+")", Toast.LENGTH_LONG).show();
+            Toast.makeText(getApplicationContext(), "서버통신 실패", Toast.LENGTH_LONG).show();
         }
     }
+
+    //스캔 이후 장치 발견 이벤트 - new version
+    public ScanCallback ScanCallback = new ScanCallback () {
+        public void onScanResult(int callbackType, ScanResult result) {
+            processResult(result);
+        }
+        public void onScanFailed(int errorCode) {
+        }
+
+        private void processResult(final ScanResult result) {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    String DeviceAddress = result.getDevice().toString();
+                    Log.d("발견한 BLE", "디바이스 - " + DeviceAddress);
+                    if (beaconList.contains(DeviceAddress)) {
+                        MacList.add(DeviceAddress);
+                    }
+                }
+            });
+        }
+    };
 
     //해당 과정에 등록된 비콘 리스트 가져오기
     @RequiresApi(api = Build.VERSION_CODES.KITKAT)
@@ -339,22 +364,6 @@ public class MainActivity extends AppCompatActivity {
         Toast.makeText(getApplicationContext(), "서버로 출석 정보를 전송하는데 실패했습니다.", Toast.LENGTH_LONG).show();
     }
 
-    //스캔 이후 장치 발견 이벤트
-    public BluetoothAdapter.LeScanCallback leScanCallback = new BluetoothAdapter.LeScanCallback() {
-        @Override
-        public void onLeScan(final BluetoothDevice device, final int rssi, final byte[] scanRecord) {
-        runOnUiThread(new Runnable() {
-            public void run() {
-                //스캔한 내용 출력
-                String DeviceAddress = device.getAddress();
-                if (beaconList.contains(DeviceAddress)) {
-                    MacList.add(DeviceAddress);
-                }
-            }
-        });
-        }
-    };
-
     //블루투스 켜져있는지 체크
     public boolean checkBLEswithOn(BluetoothAdapter bluetoothAdapter) {
         //연결 안되었을 때
@@ -404,12 +413,9 @@ public class MainActivity extends AppCompatActivity {
                 if (uri != null) {
                     String chulSign = uri.getQueryParameter("chulSign");
                     if (chulSign != null) {
-                        //BLE를 위한 초기세팅
-                        bluetoothManager = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
-                        assert bluetoothManager != null;
-                        bluetoothAdapter = bluetoothManager.getAdapter();
-
                         //BLE 가능여부 체크 후 스위치 On
+                        bluetoothManager = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
+                        bluetoothAdapter = bluetoothManager.getAdapter();
                         requestEnableBLE(bluetoothAdapter);
                     }
                     int sharpPos = url.indexOf('#');
@@ -432,11 +438,7 @@ public class MainActivity extends AppCompatActivity {
             }
 
             //쿠키값 유지
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
-                CookieSyncManager.getInstance().sync();
-            } else {
-                CookieManager.getInstance().flush();
-            }
+            CookieManager.getInstance().flush();
         }
 
         @Override
