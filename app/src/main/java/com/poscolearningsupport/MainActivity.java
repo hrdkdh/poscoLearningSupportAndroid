@@ -242,13 +242,14 @@ public class MainActivity extends AppCompatActivity {
         //맥리스트 서버로 전송
         int resultsMsg= 0;
         Log.d("맥결과", "결과 - "+MacResults);
-        if (!MacResults.equals("")) {
+
+        if (!MacResults.equals("")) { //매칭된 Mac이 있다면
             resultsMsg = sendMacListToServer(MacResults);
+            if (resultsMsg!=200) {
+                Toast.makeText(getApplicationContext(), "교육장 신호 감지에 성공하였으나 서버통신에 실패하였습니다. (오류코드 : "+String.valueOf(resultsMsg)+")", Toast.LENGTH_LONG).show();
+            }
         } else {
             Toast.makeText(getApplicationContext(), "교육장 신호 감지에 실패하였습니다.", Toast.LENGTH_LONG).show();
-        }
-        if (resultsMsg!=200) {
-            Toast.makeText(getApplicationContext(), "서버통신 실패", Toast.LENGTH_LONG).show();
         }
     }
 
@@ -319,21 +320,21 @@ public class MainActivity extends AppCompatActivity {
             conn.disconnect();
         } catch (MalformedURLException e) {
             responseCode=1;
-            beaconLoadFailureToastMessage();
+            beaconLoadFailureToastMessage(responseCode);
         } catch (IOException e) {
             responseCode=2;
-            beaconLoadFailureToastMessage();
+            beaconLoadFailureToastMessage(responseCode);
         }
         if (responseCode!=200) {
-            beaconLoadFailureToastMessage();
+            beaconLoadFailureToastMessage(responseCode);
             return "error";
         } else {
             return responseResults;
         }
     }
 
-    public void beaconLoadFailureToastMessage() {
-        Toast.makeText(getApplicationContext(), "서버에서 비콘 정보를 로드하는데 실패했습니다.", Toast.LENGTH_LONG).show();
+    public void beaconLoadFailureToastMessage(int responsecode) {
+        Toast.makeText(getApplicationContext(), "서버에서 비콘 정보를 로드하는데 실패했습니다. (오류코드 : "+String.valueOf(responsecode)+")", Toast.LENGTH_LONG).show();
     }
 
     //맥리스트 서버로 전송하는 메쏘드
@@ -375,16 +376,16 @@ public class MainActivity extends AppCompatActivity {
             }
         } catch (MalformedURLException e) {
             responseCode=1;
-            sendMacListToServerFailureToastMessage();
+            sendMacListToServerFailureToastMessage(responseCode);
         } catch (IOException e) {
             responseCode=2;
-            sendMacListToServerFailureToastMessage();
+            sendMacListToServerFailureToastMessage(responseCode);
         }
         return responseCode;
     }
 
-    public void sendMacListToServerFailureToastMessage() {
-        Toast.makeText(getApplicationContext(), "서버로 출석 정보를 전송하는데 실패했습니다.", Toast.LENGTH_LONG).show();
+    public void sendMacListToServerFailureToastMessage(int responseCode) {
+        Toast.makeText(getApplicationContext(), "서버로 출석 정보를 전송하는데 실패했습니다. (오류코드 : "+String.valueOf(responseCode)+")", Toast.LENGTH_LONG).show();
     }
 
     //블루투스 켜져있는지 체크
