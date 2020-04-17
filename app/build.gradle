@@ -7,8 +7,8 @@ android {
         applicationId "com.poscolearningsupport"
         minSdkVersion 21
         targetSdkVersion 29
-        versionCode 1
-        versionName "001.002"
+        versionCode 4
+        versionName "001.004"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     buildTypes {

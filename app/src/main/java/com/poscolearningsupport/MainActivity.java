@@ -2,6 +2,7 @@ package com.poscolearningsupport;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
+import android.app.AlertDialog;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothManager;
 import android.bluetooth.le.BluetoothLeScanner;
@@ -18,7 +19,6 @@ import android.os.StrictMode;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.webkit.CookieManager;
-import android.webkit.CookieSyncManager;
 import android.webkit.WebBackForwardList;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -26,7 +26,6 @@ import android.webkit.WebViewClient;
 import android.widget.Toast;
 
 import androidx.annotation.RequiresApi;
-import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
@@ -53,8 +52,8 @@ public class MainActivity extends AppCompatActivity {
     public WebView mWebView;
     public WebSettings mWebSettings;
     String hostName="http://app.poscohrd.com:8000";
-    String AppDate="200304";
-    String firstPageUrl=hostName+"/?ca=main&from=androidAppDate"+AppDate;
+    String AppVersion="001.004";
+    String firstPageUrl=hostName+"/?ca=main&from=androidAppVersion_"+AppVersion;
     String hostNameNotHttp="app.poscohrd.com";
 
     //BLE를 위한 변수
@@ -87,6 +86,7 @@ public class MainActivity extends AppCompatActivity {
 
         //BLE 가능여부 체크 후 스위치 On
         bluetoothManager = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
+        assert bluetoothManager != null;
         bluetoothAdapter = bluetoothManager.getAdapter();
         requestEnableBLE(bluetoothAdapter);
 
@@ -97,16 +97,41 @@ public class MainActivity extends AppCompatActivity {
             StrictMode.ThreadPolicy policy = new StrictMode.ThreadPolicy.Builder().permitAll().build();
             StrictMode.setThreadPolicy(policy);
         }
-        //위치 퍼미션 강제 발생코드
+        requestLocationPermission();
+    }
+
+    //위치 퍼미션 체크 메쏘드
+    public int checkLocationPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            ActivityCompat.requestPermissions(this,
-                    new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, MY_PERMISSIONS_REQUEST_ACCESS_FINE_LOCATION);
+            int permissionCheck = ContextCompat.checkSelfPermission(this,
+                    Manifest.permission.ACCESS_FINE_LOCATION);
+            return permissionCheck;
         } else {
-            ActivityCompat.requestPermissions(this,
-                    new String[]{Manifest.permission.ACCESS_COARSE_LOCATION}, MY_PERMISSIONS_REQUEST_ACCESS_COARSE_LOCATION);
+            int permissionCheck = ContextCompat.checkSelfPermission(this,
+                    Manifest.permission.ACCESS_COARSE_LOCATION);
+            return permissionCheck;
         }
     }
 
+    //위치 퍼미션 요청 메쏘드
+    public void requestLocationPermission() {
+        int permissionCheck = checkLocationPermission();
+        if (permissionCheck<0) {
+            Log.d("위치 퍼미션", "권한 허용 필요");
+            Log.d("퍼미션 상태", String.valueOf(permissionCheck));
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            if (permissionCheck<0) {
+                ActivityCompat.requestPermissions(this,
+                        new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, MY_PERMISSIONS_REQUEST_ACCESS_FINE_LOCATION);
+            }
+        } else {
+            if (permissionCheck<0) {
+                ActivityCompat.requestPermissions(this,
+                        new String[]{Manifest.permission.ACCESS_COARSE_LOCATION}, MY_PERMISSIONS_REQUEST_ACCESS_COARSE_LOCATION);
+            }
+        }
+    }
     @Override
     protected void onResume() {
         super.onResume();
@@ -158,12 +183,10 @@ public class MainActivity extends AppCompatActivity {
     //BLE 스캔시작 메쏘드
     public void startScan() {
         //BLE 가능여부 체크 후 스위치 On
-        assert bluetoothManager != null;
-        assert bluetoothAdapter != null;
-        assert bluetoothLeScanner != null;
         try {
             bluetoothLeScanner = bluetoothAdapter.getBluetoothLeScanner();
             bluetoothManager = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
+            assert bluetoothManager != null;
             bluetoothAdapter = bluetoothManager.getAdapter();
         } catch(Exception e) {
             Toast.makeText(getApplicationContext(), "블루투스 미지원 기기이므로 출석이 불가능합니다.", Toast.LENGTH_LONG).show();
@@ -209,7 +232,7 @@ public class MainActivity extends AppCompatActivity {
         HashSet<String> OnlyMacList = new HashSet<String>(MacList);
         MacList = new ArrayList<String>(OnlyMacList);
         for (String list : MacList) {
-            if (MacResults == "") {
+            if (MacResults.equals("")) {
                 MacResults = list;
             } else {
                 MacResults = MacResults + "|" + list;
@@ -413,8 +436,12 @@ public class MainActivity extends AppCompatActivity {
                 if (uri != null) {
                     String chulSign = uri.getQueryParameter("chulSign");
                     if (chulSign != null) {
+                        //위치 권한 체크
+                        requestLocationPermission();
+
                         //BLE 가능여부 체크 후 스위치 On
                         bluetoothManager = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
+                        assert bluetoothManager != null;
                         bluetoothAdapter = bluetoothManager.getAdapter();
                         requestEnableBLE(bluetoothAdapter);
                     }
@@ -424,14 +451,26 @@ public class MainActivity extends AppCompatActivity {
                         chulStartSign = url.substring(sharpPos);
                     }
                     if (chulStartSign != null) {
-                        Toast.makeText(getApplicationContext(), "출석신호를 감지합니다", Toast.LENGTH_LONG).show();
-                        //해당 과정에 등록된 비콘 리스트 가져오기
-                        String beaconList=getBeaconListByString();
-                        if (beaconList.equals("error")) {
-                            Toast.makeText(getApplicationContext(), "서버통신 실패", Toast.LENGTH_LONG).show();
+                        int permissionCheck = checkLocationPermission();
+                        if (permissionCheck<0) {
+                            Log.d("위치 퍼미션", "권한 허용 필요");
+                            Log.d("퍼미션 상태", String.valueOf(permissionCheck));
+                            //이 경우라면 출석권한 deny 버튼을 누른 다음 출석버튼(아이콘)을 클릭한 경우임. 따라서 경고창 출력
+                            AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this);
+                            builder.setTitle("출석처리 불가").setMessage("위치 권한을 허용하지 않아 출석처리가 불가능합니다. 위치 권한 확인 메세지가 뜰 경우 '허용'을 눌러 주십시오. 만약 위치 권한 확인 메세지가 뜨지 않을 경우 스마트폰 설정 메뉴로 들어가 권한을 직접 허용해 주십시오. (폰설정 -> 앱 -> 학습지원앱 -> 권한 -> 위치권한 허용)");
+                            AlertDialog alertDialog = builder.create();
+                            alertDialog.show();
+                            mWebView.loadUrl(firstPageUrl);
                         } else {
-                            //여기부터 비콘감지 및 URL보내기 작동!
-                            startScan();
+                            Toast.makeText(getApplicationContext(), "출석신호를 감지합니다", Toast.LENGTH_LONG).show();
+                            //해당 과정에 등록된 비콘 리스트 가져오기
+                            String beaconList = getBeaconListByString();
+                            if (beaconList.equals("error")) {
+                                Toast.makeText(getApplicationContext(), "서버통신 실패", Toast.LENGTH_LONG).show();
+                            } else {
+                                //여기부터 비콘감지 및 URL보내기 작동!
+                                startScan();
+                            }
                         }
                     }
                 }
